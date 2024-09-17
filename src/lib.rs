@@ -3,6 +3,7 @@ use bevy_ecs::schedule::{ScheduleLabel, Schedules};
 
 mod dot;
 
+pub mod data_graph;
 pub mod event_graph;
 #[cfg(feature = "render_graph")]
 pub mod render_graph;
@@ -10,6 +11,33 @@ pub mod schedule_graph;
 
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 struct ScheduleDebugGroup;
+
+/// Formats the events into a dot graph.
+#[track_caller]
+pub fn data_graph_dot(app: &mut App, settings: &data_graph::Settings) -> String {
+    app.world
+        .resource_scope::<Schedules, _>(|world, mut schedules| {
+            let ignored_ambiguities = schedules.ignored_scheduling_ambiguities.clone();
+            let mut contexts: Vec<data_graph::DataGraphContext> = Vec::new();
+            for (_l, schedule) in schedules.iter_mut() {
+                if let Some(include_schedule) = &settings.include_schedule {
+                    if !(include_schedule)(schedule) {
+                        continue;
+                    }
+                }
+                schedule.graph_mut().initialize(world);
+
+                let _ = schedule.graph_mut().build_schedule(
+                    world.components(),
+                    ScheduleDebugGroup.intern(),
+                    &ignored_ambiguities,
+                );
+                let context = data_graph::data_graph_dot(schedule, world, settings);
+                contexts.push(context);
+            }
+            data_graph::print_context(schedules.as_ref(), &contexts, world, settings)
+        })
+}
 
 /// Formats the events into a dot graph.
 #[track_caller]
@@ -38,7 +66,12 @@ pub fn events_graph_dot(app: &mut App, settings: &event_graph::Settings) -> Stri
         })
 }
 
-/// Prints the schedule with default settings.
+/// Prints the data accesses with default settings.
+pub fn print_data_graph(app: &mut App) {
+    let dot = data_graph_dot(app, &data_graph::Settings::default());
+    println!("{dot}");
+}
+/// Prints the events with default settings.
 pub fn print_events_graph(app: &mut App) {
     let dot = events_graph_dot(app, &event_graph::Settings::default());
     println!("{dot}");
